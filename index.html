@@ -1,27 +1,457 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ticker Video Generator</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>Ticker Studio — ScrollX-style (MP4 via ffmpeg.wasm)</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Oswald:wght@400;700&family=Poppins:wght@400;700&family=Roboto+Condensed:wght@400;700&display=swap" rel="stylesheet"/>
+
+  <!-- ffmpeg.wasm (UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/ffmpeg.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0a0d13;--panel:#0f1622;--panel2:#121a27;--text:#e8eef8;--muted:#9fb0c6;
+      --brand:#5ea0ff;--brand2:#2b72f5;--ring:#2f8cff66;--border:#1d2a3b;--r:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;background:radial-gradient(1200px 800px at 20% -10%, #152033, transparent),var(--bg);
+      color:var(--text);font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    header{
+      position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;
+      padding:14px 18px;border-bottom:1px solid var(--border);
+      background:linear-gradient(180deg, rgba(12,17,26,.8), rgba(12,17,26,.4));backdrop-filter:saturate(120%) blur(6px);
+    }
+    .brand{font-weight:900;letter-spacing:.2px}
+    .status{color:var(--muted);font-size:14px}
+    main{
+      max-width:1200px;margin:20px auto;display:grid;grid-template-columns:360px 1fr;gap:18px;padding:0 14px;
+    }
+    @media (max-width:980px){ main{grid-template-columns:1fr} }
+    .panel{
+      background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);
+      border-radius:var(--r);padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.25);
+    }
+    .panel h2{margin:6px 4px 12px;font-size:16px;color:var(--muted);letter-spacing:.4px}
+    .grid{display:grid;gap:12px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .row{display:flex;gap:10px}
+    .field.check{flex-direction:row;align-items:center;gap:10px}
+    .input{
+      width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:#0c1320;color:var(--text);
+      outline:none;transition:box-shadow .2s,border-color .2s
+    }
+    .input[type="color"]{padding:4px;height:42px}
+    .input:focus{border-color:var(--brand);box-shadow:0 0 0 4px var(--ring)}
+    .hint{font-size:12px;color:var(--muted)}
+    .preview{display:flex;flex-direction:column;gap:14px}
+    .canvasWrap{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:#000;display:grid;place-items:center;min-height:140px}
+    canvas{width:min(100%,1100px);height:auto;display:block}
+    .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .btn{border:0;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:800}
+    .btn.primary{background:linear-gradient(180deg,var(--brand),var(--brand2));color:#fff;box-shadow:0 8px 18px rgba(46,127,255,.3)}
+    .btn.secondary{background:#152033;color:#fff;border:1px solid var(--border)}
+    .btn:disabled{opacity:.6;cursor:wait}
+    .outputs{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width:980px){ .outputs{grid-template-columns:1fr} }
+    .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:var(--r);padding:12px}
+    .card h3{margin:0 0 8px;font-size:15px;color:var(--muted)}
+    video{width:100%;background:#000;border-radius:12px}
+    .link{display:inline-block;margin-top:8px;color:white;text-decoration:none;font-weight:800;padding:8px 10px;border-radius:10px;background:#1a6bff}
+    .muted{color:var(--muted);font-size:14px}
+  </style>
 </head>
 <body>
-  <h1>Ticker → MP4 Demo</h1>
+  <header>
+    <div class="brand">📰 Ticker Studio (GitHub Pages)</div>
+    <div id="status" class="status">Idle</div>
+  </header>
 
-  <form id="tickerForm">
-    <label for="ticker">Enter Ticker Text:</label>
-    <input type="text" id="ticker" required />
+  <main>
+    <section class="panel">
+      <h2>Design</h2>
+      <div class="grid">
+        <label class="field">
+          <span>Text</span>
+          <input id="text" class="input" value="BREAKING NEWS — This is a sample ticker • " />
+        </label>
 
-    <button type="submit">Generate Video</button>
-  </form>
+        <div class="row">
+          <label class="field" style="flex:2">
+            <span>Font family</span>
+            <select id="fontFamily" class="input">
+              <option value="'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif">Inter</option>
+              <option value="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif">Impact</option>
+              <option value="'Oswald', Arial, sans-serif">Oswald</option>
+              <option value="'Roboto Condensed', Arial, sans-serif">Roboto Condensed</option>
+              <option value="'Poppins', system-ui, sans-serif">Poppins</option>
+            </select>
+          </label>
+          <label class="field" style="flex:1">
+            <span>Font size (px)</span>
+            <input id="fontSize" class="input" type="number" value="64" />
+          </label>
+        </div>
 
-  <div id="previewContainer">
-    <canvas id="tickerCanvas" width="640" height="360"></canvas>
-  </div>
+        <div class="row">
+          <label class="field" style="flex:1">
+            <span>Text color</span>
+            <input id="textColor" class="input" type="color" value="#ffffff" />
+          </label>
+          <label class="field" style="flex:1">
+            <span>Background color</span>
+            <input id="bgColor" class="input" type="color" value="#0b0f17" />
+          </label>
+        </div>
 
-  <button id="downloadBtn" disabled>Download MP4 (WebM fallback)</button>
+        <label class="field check">
+          <input id="gradient" type="checkbox" checked />
+          <span>Gradient background</span>
+        </label>
+        <label class="field check">
+          <input id="shadow" type="checkbox" checked />
+          <span>Text shadow</span>
+        </label>
 
-  <script src="script.js"></script>
+        <label class="field">
+          <span>Background image</span>
+          <input id="bgImage" class="input" type="file" accept="image/*" />
+          <div class="hint">Optional. Uses your local image; never uploaded.</div>
+        </label>
+      </div>
+
+      <h2 style="margin-top:16px;">Timing & Size</h2>
+      <div class="grid">
+        <label class="field">
+          <span>Speed (px/sec)</span>
+          <input id="speed" class="input" type="range" min="20" max="800" step="5" value="200" />
+          <div class="hint"><span id="speedVal">200</span> px/s</div>
+        </label>
+        <label class="field">
+          <span>Duration (sec)</span>
+          <input id="duration" class="input" type="range" min="1" max="60" step="1" value="8" />
+          <div class="hint"><span id="durationVal">8</span>s</div>
+        </label>
+        <div class="row">
+          <label class="field" style="flex:1">
+            <span>Width</span>
+            <input id="width" class="input" type="number" value="1280" />
+          </label>
+          <label class="field" style="flex:1">
+            <span>Height</span>
+            <input id="height" class="input" type="number" value="200" />
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel preview">
+      <div class="canvasWrap">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div class="actions">
+        <button id="renderBtn" class="btn primary">Render MP4</button>
+        <button id="stopPreviewBtn" class="btn secondary">Stop Preview</button>
+        <button id="startPreviewBtn" class="btn secondary">Start Preview</button>
+        <span id="status2" class="status"></span>
+      </div>
+
+      <div class="outputs">
+        <div class="card">
+          <h3>MP4 Preview</h3>
+          <video id="mp4Video" controls></video>
+          <a id="mp4Link" class="link" style="display:none" download="ticker.mp4">Download MP4</a>
+        </div>
+        <div class="card">
+          <h3>Debug: WebM</h3>
+          <video id="webmVideo" controls></video>
+          <a id="webmLink" class="link" style="display:none" download="ticker.webm">Download WebM</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- State ---
+    const el = (id) => document.getElementById(id);
+    const statusTop = el('status');
+    const statusInline = el('status2');
+
+    const canvas = el('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const inputs = {
+      text: el('text'),
+      fontFamily: el('fontFamily'),
+      fontSize: el('fontSize'),
+      textColor: el('textColor'),
+      shadow: el('shadow'),
+      bgColor: el('bgColor'),
+      gradient: el('gradient'),
+      bgImage: el('bgImage'),
+      speed: el('speed'),
+      duration: el('duration'),
+      width: el('width'),
+      height: el('height'),
+    };
+    const speedVal = el('speedVal');
+    const durationVal = el('durationVal');
+
+    const webmVideo = el('webmVideo');
+    const mp4Video = el('mp4Video');
+    const webmLink = el('webmLink');
+    const mp4Link = el('mp4Link');
+
+    let previewRAF = 0;
+    let textStrip = null;
+    let bgImg = null;
+
+    // ffmpeg singleton
+    let ffmpegInstance = null;
+    async function getFFmpeg() {
+      if (ffmpegInstance) return ffmpegInstance;
+      const { createFFmpeg, fetchFile } = FFmpeg;
+      const ff = createFFmpeg({ log: true });
+      await ff.load();
+      ffmpegInstance = ff;
+      return ffmpegInstance;
+    }
+
+    // --- Utilities ---
+    function shade(hex, amount=0.2){
+      const c = hex.replace('#','');
+      const n = parseInt(c.length===3 ? c.split('').map(x=>x+x).join('') : c,16);
+      let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+      r = Math.round(r + (amount>=0 ? (255-r)*amount : r*amount));
+      g = Math.round(g + (amount>=0 ? (255-g)*amount : g*amount));
+      b = Math.round(b + (amount>=0 ? (255-b)*amount : b*amount));
+      const toHex = v => v.toString(16).padStart(2,'0');
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    function updateCanvasSize(){
+      const w = Math.max(2, parseInt(inputs.width.value||'0')||0);
+      const h = Math.max(2, parseInt(inputs.height.value||'0')||0);
+      canvas.width = w; canvas.height = h;
+    }
+
+    function buildTextStrip(){
+      const fontSize = parseInt(inputs.fontSize.value)||64;
+      const fontFamily = inputs.fontFamily.value;
+      const text = inputs.text.value || '';
+      const textColor = inputs.textColor.value;
+      const shadow = inputs.shadow.checked;
+      const h = canvas.height;
+
+      const c = document.createElement('canvas');
+      const cctx = c.getContext('2d');
+      const tmp = document.createElement('canvas').getContext('2d');
+      tmp.font = `${fontSize}px ${fontFamily}`;
+      const oneWidth = Math.ceil(tmp.measureText(text).width) + Math.ceil(fontSize * 1.5);
+      c.width = Math.max(2, oneWidth);
+      c.height = Math.max(2, h);
+
+      cctx.clearRect(0,0,c.width,c.height);
+      cctx.font = `${fontSize}px ${fontFamily}`;
+      cctx.textBaseline = 'middle';
+      cctx.fillStyle = textColor;
+      if (shadow){
+        cctx.shadowColor = 'rgba(0,0,0,0.6)';
+        cctx.shadowBlur = 4;
+        cctx.shadowOffsetX = 2;
+        cctx.shadowOffsetY = 2;
+      } else {
+        cctx.shadowColor = 'transparent';
+        cctx.shadowBlur = 0;
+        cctx.shadowOffsetX = 0;
+        cctx.shadowOffsetY = 0;
+      }
+      cctx.fillText(text, 0, h/2);
+
+      textStrip = c;
+    }
+
+    function drawBackground(ctx){
+      const w = canvas.width, h = canvas.height;
+      if (bgImg && bgImg.complete && bgImg.naturalWidth){
+        ctx.drawImage(bgImg, 0, 0, w, h);
+        return;
+      }
+      if (inputs.gradient.checked){
+        const g = ctx.createLinearGradient(0,0,w,h);
+        g.addColorStop(0, inputs.bgColor.value);
+        g.addColorStop(1, shade(inputs.bgColor.value,0.2));
+        ctx.fillStyle = g;
+      } else {
+        ctx.fillStyle = inputs.bgColor.value;
+      }
+      ctx.fillRect(0,0,w,h);
+    }
+
+    function drawFrame(offsetX){
+      drawBackground(ctx);
+      if (!textStrip) buildTextStrip();
+      const pattern = ctx.createPattern(textStrip, 'repeat');
+      ctx.save();
+      ctx.translate(-offsetX, 0);
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0,0,canvas.width + textStrip.width, canvas.height);
+      ctx.restore();
+    }
+
+    function startPreview(){
+      cancelAnimationFrame(previewRAF);
+      let start = performance.now();
+      const speed = parseInt(inputs.speed.value)||200;
+
+      function loop(now){
+        const elapsed = (now - start)/1000;
+        const offsetX = (elapsed * speed) % (textStrip ? textStrip.width : 1);
+        drawFrame(offsetX);
+        previewRAF = requestAnimationFrame(loop);
+      }
+      previewRAF = requestAnimationFrame(loop);
+    }
+    function stopPreview(){ cancelAnimationFrame(previewRAF); }
+
+    // --- Recording ---
+    async function renderWebM(){
+      return new Promise((resolve, reject)=>{
+        try{
+          const fps = 60;
+          const dur = Math.max(1, parseInt(inputs.duration.value)||8);
+          const totalFrames = Math.floor(dur * fps);
+
+          const stream = canvas.captureStream(fps);
+          if (!('MediaRecorder' in window)){
+            reject(new Error('MediaRecorder not supported in this browser.'));
+            return;
+          }
+          let mime = 'video/webm;codecs=vp9';
+          if (!MediaRecorder.isTypeSupported(mime)){
+            mime = 'video/webm;codecs=vp8';
+          }
+          const rec = new MediaRecorder(stream, { mimeType: mime });
+          const chunks = [];
+          rec.ondataavailable = (e)=> e.data.size && chunks.push(e.data);
+          rec.onstop = ()=> resolve(new Blob(chunks, { type: 'video/webm' }));
+
+          // draw frames with fixed timing (pause preview to avoid conflicts)
+          stopPreview();
+          const speed = parseInt(inputs.speed.value)||200;
+          let frame = 0;
+          rec.start();
+
+          function step(){
+            const t = frame / fps;
+            const offsetX = (t * speed) % (textStrip ? textStrip.width : 1);
+            drawFrame(offsetX);
+            frame++;
+            if (frame <= totalFrames){
+              setTimeout(step, 1000/fps);
+            } else {
+              rec.stop();
+            }
+          }
+          step();
+        } catch (e){ reject(e); }
+      });
+    }
+
+    async function convertToMP4(webmBlob){
+      const ffmpeg = await getFFmpeg();
+      const { fetchFile } = FFmpeg; // from UMD global
+      statusTop.textContent = 'Transcoding to MP4… (ffmpeg.wasm)';
+      statusInline.textContent = 'Transcoding to MP4…';
+
+      // Clean FS if reused
+      try { ffmpeg.FS('unlink','input.webm'); } catch {}
+      try { ffmpeg.FS('unlink','output.mp4'); } catch {}
+
+      const data = await fetchFile(webmBlob);
+      ffmpeg.FS('writeFile', 'input.webm', data);
+      await ffmpeg.run(
+        '-i','input.webm',
+        '-c:v','libx264',
+        '-preset','veryfast',
+        '-pix_fmt','yuv420p',
+        '-movflags','faststart',
+        'output.mp4'
+      );
+      const out = ffmpeg.FS('readFile','output.mp4');
+      return new Blob([out.buffer], { type: 'video/mp4' });
+    }
+
+    // --- Handlers ---
+    function setStatus(s){ statusTop.textContent = s; statusInline.textContent = s; }
+
+    async function handleRender(){
+      try{
+        setStatus('Recording WebM…');
+        el('renderBtn').disabled = true;
+
+        const webm = await renderWebM();
+        const webmUrl = URL.createObjectURL(webm);
+        webmVideo.src = webmUrl;
+        webmLink.href = webmUrl; webmLink.style.display = 'inline-block';
+
+        setStatus('Loading ffmpeg.wasm…');
+        const mp4Blob = await convertToMP4(webm);
+        const mp4Url = URL.createObjectURL(mp4Blob);
+        mp4Video.src = mp4Url;
+        mp4Link.href = mp4Url; mp4Link.style.display = 'inline-block';
+
+        setStatus('Done ✔');
+        // resume preview
+        startPreview();
+      } catch (e){
+        console.error(e);
+        setStatus('Error: ' + (e?.message || String(e)));
+      } finally {
+        el('renderBtn').disabled = false;
+      }
+    }
+
+    // --- Wiring ---
+    function rebuildAndPreview(){
+      updateCanvasSize();
+      buildTextStrip();
+      startPreview();
+      speedVal.textContent = inputs.speed.value;
+      durationVal.textContent = inputs.duration.value;
+    }
+
+    // Inputs change handlers
+    [
+      'text','fontFamily','fontSize','textColor','shadow',
+      'bgColor','gradient','speed','duration','width','height'
+    ].forEach(id => inputs[id].addEventListener('input', rebuildAndPreview));
+
+    inputs.bgImage.addEventListener('change', (e)=>{
+      const f = e.target.files?.[0];
+      if (!f){ bgImg = null; startPreview(); return; }
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = ()=>{ bgImg = img; startPreview(); };
+      img.src = url;
+    });
+
+    el('renderBtn').addEventListener('click', handleRender);
+    el('stopPreviewBtn').addEventListener('click', stopPreview);
+    el('startPreviewBtn').addEventListener('click', startPreview);
+
+    // Init
+    rebuildAndPreview();
+  </script>
 </body>
 </html>
